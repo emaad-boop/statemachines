@@ -1,0 +1,77 @@
+#include <bits/stdc++.h>
+using namespace std;
+
+class StateMachineactions {
+public:
+    int currentState;
+
+    StateMachineactions() {
+        currentState = 0;
+    }
+
+    void handleState() {
+        if (currentState == 0) {
+            cout << "State machine is at rest" << endl;
+        } else if (currentState == 1) {
+            cout << "State machine is moving" << endl;
+        } else if (currentState == 2) {
+            cout << "Destination reached" << endl;
+        } else {
+            cout << "Invalid state" << endl;
+        }
+    }
+};
+
+class detectingObject {
+public:
+    int objectDetected;
+    int distance;
+
+    detectingObject() {
+        objectDetected = 0;
+        distance = 0;
+    }
+
+    void sense() {
+        objectDetected = 1;
+        distance = rand() % 200 + 1;   // random distance from 1 to 200
+    }
+
+    void detectObject() {
+        if (objectDetected == 0) {
+            cout << "No object detected" << endl;
+        } else if (objectDetected == 1) {
+            cout << "Object detected" << endl;
+            if (distance <= 100) {
+                cout << "Object is at a distance of " << distance
+                     << " -> avoid the obstacle" << endl;
+            } else {
+                cout << "Object is at a distance of " << distance
+                     << " -> too far away, no need to avoid" << endl;
+            }
+        } else {
+            cout << "Invalid detection state" << endl;
+        }
+    }
+};
+
+int main() {
+    srand(time(0));   // so the distance changes on every run
+
+    StateMachineactions stateMachine;
+    detectingObject detector;
+
+    // Step 1: machine starts moving
+    stateMachine.currentState = 1;
+    stateMachine.handleState();
+
+    // Step 2: sensor finds an object
+    detector.sense();
+    detector.detectObject();
+
+    // Step 3: destination reached
+    stateMachine.currentState = 2;
+    stateMachine.handleState();
+
+    return 0;
+}
