@@ -1,0 +1,156 @@
+#include <iostream>
+#include <cstdlib>
+#include <string>
+using namespace std;
+const int SIZE = 20;    //used for telling the grid dimensions       
+ const int MAX_TICKS = 2000;    //safety limits so that when the rover ges stuck the while loop ends
+enum class Cell  { EMPTY, OBSTACLE, START, GOAL, PATH };           //using enum instead for plain text for better and easy understanding
+enum class State { IDLE, MOVING, AVOID_OBSTACLE, GOAL_REACHED };  
+struct Pos { int r, c; };     
+Cell grid[SIZE][SIZE];     //it reepresents the whole grid    
+int  visits[SIZE][SIZE] = {};   //visits counts how much time the rover stood on each square 
+char cellToChar(Cell c) {   //this is used to convert enum values to someething printable
+    switch (c) {
+        case Cell::EMPTY:    return '.';
+        case Cell::OBSTACLE: return '#';
+        case Cell::START:    return 'S';
+        case Cell::GOAL:     return 'G';
+        case Cell::PATH:     return '*';
+    }
+    return '?';
+}
+string stateToString(State s) {
+    switch (s) {
+        case State::IDLE:           return "IDLE";
+        case State::MOVING:         return "MOVING";
+        case State::AVOID_OBSTACLE: return "AVOID_OBSTACLE";
+        case State::GOAL_REACHED:   return "GOAL_REACHED";
+    }
+    return "UNKNOWN";
+}
+void initMap(Pos start, Pos goal) {       //this fills the whole function with EMPTY and the marks the start and end 
+    for (int r = 0; r < SIZE; r++) 
+        for (int c = 0; c < SIZE; c++)
+            grid[r][c] = Cell::EMPTY;
+    grid[start.r][start.c] = Cell::START;
+    grid[goal.r][goal.c]   = Cell::GOAL;
+}
+bool inBounds(int r, int c) { return r >= 0 && r < SIZE && c >= 0 && c < SIZE; }   //checks the coordinate  
+bool isFree(int r, int c) { return inBounds(r, c) && grid[r][c] != Cell::OBSTACLE; }  // is true if the square is under the grid not an obstacle .it uses this to take dicision wether it steps on something or not
+void addObstacle(int r, int c) {   //add obstacle where the empty place is
+    if (inBounds(r, c) && grid[r][c] == Cell::EMPTY) {
+        grid[r][c] = Cell::OBSTACLE;
+        cout << "  Obstacle placed at (" << r << "," << c << ")\n";
+    } else {
+        cout << "  Cannot place obstacle at (" << r << "," << c << ")\n";
+    }
+}
+void printMap(Pos rover, const string& title) {    //draws the grid with rows and columns
+    cout << "\n=== " << title << " ===\n    ";
+    for (int c = 0; c < SIZE; c++) cout << (c % 10);         
+    cout << "\n";
+    for (int r = 0; r < SIZE; r++) {
+        cout << (r < 10 ? " " : "") << r << "  ";             
+        for (int c = 0; c < SIZE; c++) {
+            if (r == rover.r && c == rover.c) cout << 'R';     
+            else cout << cellToChar(grid[r][c]);
+        }
+        cout << "\n";
+    }
+    cout << "Legend: R=rover  S=start  G=goal  #=obstacle  *=path  .=empty\n";
+}
+Pos preferredStep(Pos p, Pos goal) {    //compute how far the rover is and reduces the largest distance
+    int dr = goal.r - p.r, dc = goal.c - p.c;
+    if (dr != 0 && abs(dr) >= abs(dc)) return { p.r + (dr > 0 ? 1 : -1), p.c };
+    if (dc != 0)                       return { p.r, p.c + (dc > 0 ? 1 : -1) };
+    return p;
+}
+Pos bestDetour(Pos p, Pos goal) {   //obstacle avoidance move
+    const int dr[4] = { 1, 0, -1, 0 };
+    const int dc[4] = { 0, 1, 0, -1 };
+    Pos best = p;
+    int bestScore = 1000000;
+    for (int i = 0; i < 4; i++) {
+        int nr = p.r + dr[i], nc = p.c + dc[i];
+        if (!isFree(nr, nc)) continue;
+        int score = abs(goal.r - nr) + abs(goal.c - nc) + 10 * visits[nr][nc];
+        if (score < bestScore) { bestScore = score; best = { nr, nc }; }
+    }
+    return best;
+}
+void moveRover(Pos& rover, Pos next) {
+    if (grid[rover.r][rover.c] == Cell::EMPTY) grid[rover.r][rover.c] = Cell::PATH;
+    rover = next;
+    visits[rover.r][rover.c]++;
+}
+int main() {
+    Pos start = { 0, 0 };
+    Pos goal  = { 19, 19 };
+    Pos rover = start;
+    cout << "Building 20x20 map...\n";
+    initMap(start, goal);
+    int obstacles[][2] = {
+        {3,4}, {4,5}, {5,5}, {8,8}, {8,9}, {8,10}, {12,3}, {12,4},
+        {10,14}, {11,14}, {14,14}, {15,15}, {15,16}, {16,15}, {17,17}
+    };
+    for (auto& o : obstacles) addObstacle(o[0], o[1]);
+    printMap(rover, "INITIAL MAP");
+    visits[rover.r][rover.c] = 1;
+    State state = State::IDLE;
+    int ticks = 0, idleTicks = 0, steps = 0, avoidEvents = 0;
+    cout << "\n--- State machine started ---\n";
+    while (state != State::GOAL_REACHED && ticks < MAX_TICKS) {
+        ticks++;
+        switch (state) {
+            case State::IDLE:
+                cout << "[IDLE] rover waiting at (" << rover.r << "," << rover.c << ")\n";
+                if (++idleTicks >= 2) {
+                    cout << "[IDLE -> MOVING] start command received\n";
+                    state = State::MOVING;
+                }
+                break;
+            case State::MOVING: {
+                if (rover.r == goal.r && rover.c == goal.c) {
+                    state = State::GOAL_REACHED;
+                    break;
+                }
+                Pos next = preferredStep(rover, goal);
+                if (!isFree(next.r, next.c)) {
+                    cout << "[MOVING -> AVOID_OBSTACLE] obstacle ahead at ("
+                         << next.r << "," << next.c << ")\n";
+                    avoidEvents++;
+                    state = State::AVOID_OBSTACLE;
+                } else {
+                    cout << "[MOVING] (" << rover.r << "," << rover.c << ") -> ("
+                         << next.r << "," << next.c << ")\n";
+                    moveRover(rover, next);
+                    steps++;
+                }
+                break;
+            }
+            case State::AVOID_OBSTACLE: {
+                Pos next = bestDetour(rover, goal);
+                cout << "[AVOID_OBSTACLE] detour (" << rover.r << "," << rover.c
+                     << ") -> (" << next.r << "," << next.c << ")\n";
+                moveRover(rover, next);
+                steps++;
+                cout << "[AVOID_OBSTACLE -> MOVING] path clear, resume\n";
+                state = State::MOVING;
+                break;
+            }
+            case State::GOAL_REACHED:
+                break;
+        }
+    }
+    cout << "[" << stateToString(state) << "] rover at ("
+         << rover.r << "," << rover.c << ")\n";
+    printMap(rover, "FINAL MAP (path travelled)");
+    bool ok = (rover.r == goal.r && rover.c == goal.c && state == State::GOAL_REACHED);
+    cout << "\n--- Summary ---\n"
+         << "Total steps          : " << steps << "\n"
+         << "Obstacles avoided    : " << avoidEvents << "\n"
+         << "Final state          : " << stateToString(state) << "\n";
+    if (ok) cout << "\n*** PROGRAM EXECUTED SUCCESSFULLY: rover reached the goal without hitting any obstacle ***\n";
+    else    cout << "\n*** FAILED: rover did not reach the goal ***\n";
+    return ok ? 0 : 1;
+}
